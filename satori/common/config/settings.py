@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     
     MINER_MIN_STAKE: float = 200.0
 
-    IDLE_REWARD_UID: int = 8
+    IDLE_REWARD_UID: int = 1
 
     TREASURY_RATIO: float = 0.10
     MINER_POOL_RATIO: float = 0.90
