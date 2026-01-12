@@ -1,0 +1,51 @@
+wallet:
+  name: default
+  hotkey: default
+
+bittensor:
+  netuid: 119
+  chain_endpoint: wss://entrypoint-finney.opentensor.ai:443
+
+task_center:
+  url: http://task.satorilab.ai
+
+axon:
+  enabled: true
+  ip: 0.0.0.0
+  port: 8002
+  external_ip: null
+
+validator:
+  sync_interval: 60
+  validators_per_task: 3
+  weight_sync_interval: 1800
+
+auto_update:
+  enabled: true
+  github_repo: Satori119/Satori
+  branch: main
+  check_interval: 300
+  restart_delay: 10
+
+models:
+  clip:
+    model_name: ViT-L/14
+    device: cuda
+  
+  text_encoder:
+    model_name: paraphrase-multilingual-MiniLM-L12-v2
+  
+  aesthetic:
+    model_name: openai/clip-vit-large-patch14
+  
+  nsfw:
+    model_name: Falconsai/nsfw_image_detection
+
+scoring:
+  k: 3
+  baseline: 3.5
+  time_decay_rate: 0.005
+
+logging:
+  level: INFO
+  file: logs/validator.log

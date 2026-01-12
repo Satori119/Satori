@@ -1,0 +1,30 @@
+database:
+  url: postgresql://satori:satori@localhost:5432/satori
+
+bittensor:
+  netuid: 119
+  network: finney
+  chain_endpoint: wss://entrypoint-finney.opentensor.ai:443
+
+wallet:
+  name: task_center
+  hotkey: default
+
+task_center:
+  validators_per_audit_task: 1
+
+api:
+  key: your_api_key_here
+  allowed_ips:
+    - 127.0.0.1
+    - ::1
+
+auto_update:
+  enabled: true
+  github_repo: Satori119/Satori
+  branch: main
+
+logging:
+  level: INFO
+  file: logs/task_center.log
+
