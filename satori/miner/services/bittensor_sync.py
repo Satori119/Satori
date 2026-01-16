@@ -79,19 +79,3 @@ class BittensorSyncService:
             except Exception as e:
                 logger.error(f"Sync loop error: {e}", exc_info=True)
                 await asyncio.sleep(self.sync_interval)
-    
-    def get_stake(self) -> float:
-        try:
-            hotkey = self.wallet_manager.get_hotkey()
-            return self.client.get_miner_stake(hotkey)
-        except Exception as e:
-            logger.error(f"Failed to get stake: {e}", exc_info=True)
-            return 0.0
-    
-    def check_stake_requirement(self, min_stake: float = 1000.0) -> bool:
-        try:
-            stake = self.get_stake()
-            return stake >= min_stake
-        except Exception as e:
-            logger.error(f"Failed to check stake requirement: {e}", exc_info=True)
-            return False
