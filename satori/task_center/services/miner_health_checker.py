@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from typing import Dict, List, Optional
 from satori.common.models.miner import Miner
 from satori.common.bittensor.client import BittensorClient
-from satori.common.bittensor.wallet import WalletManager
+import bittensor as bt
 from satori.common.config.yaml_config import YamlConfig
 from satori.common.crypto.signature import SignatureAuth
 from satori.common.utils.logging import setup_logger
@@ -20,18 +20,20 @@ class MinerHealthChecker:
     def __init__(
         self,
         db: Session,
-        wallet_manager: WalletManager,
+        wallet: bt.wallet,
+        wallet_name: str,
+        hotkey_name: str,
         miner_cache: MinerCache,
         check_interval: int = 600,
         heartbeat_timeout: int = 120,
         yaml_config: Optional[YamlConfig] = None
     ):
         self.db = db
-        wallet_name = wallet_manager.wallet_name if wallet_manager else "task_center"
-        hotkey_name = wallet_manager.hotkey_name if wallet_manager else "default"
+        self.wallet = wallet
+        self.wallet_name = wallet_name
+        self.hotkey_name = hotkey_name
         self.bittensor_client = BittensorClient(wallet_name, hotkey_name, yaml_config=yaml_config)
-        self.wallet_manager = wallet_manager
-        self.signature_auth = SignatureAuth(wallet_manager.wallet)
+        self.signature_auth = SignatureAuth(wallet)
         self.miner_cache = miner_cache
         self.is_running = False
         self.check_interval = check_interval
@@ -163,7 +165,7 @@ class MinerHealthChecker:
                     auth_headers = self.signature_auth.create_auth_headers(endpoint)
                     
                     request_data = {
-                        "hotkey": self.wallet_manager.get_hotkey(),
+                        "hotkey": self.wallet.hotkey.ss58_address,
                         "timestamp": datetime.now(timezone.utc).isoformat()
                     }
                     

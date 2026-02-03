@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from satori.common.models.task import Task, TaskStatus
 from satori.common.models.score import Score
 from satori.common.bittensor.client import BittensorClient
-from satori.common.bittensor.wallet import WalletManager
+import bittensor as bt
 from satori.common.config.yaml_config import YamlConfig
 from satori.common.config import settings
 from satori.common.utils.logging import setup_logger
@@ -23,18 +23,20 @@ class IdleRewardDistributor:
     def __init__(
         self,
         db: Session,
-        wallet_manager: Optional[WalletManager] = None,
+        wallet: Optional[bt.wallet] = None,
+        wallet_name: Optional[str] = None,
+        hotkey_name: Optional[str] = None,
         yaml_config: Optional[YamlConfig] = None,
         score_interval: int = 360
     ):
         self.db = db
-        self.wallet_manager = wallet_manager
+        self.wallet = wallet
+        self.wallet_name = wallet_name or "task_center"
+        self.hotkey_name = hotkey_name or "default"
         self.yaml_config = yaml_config
         self.score_interval = score_interval
 
-        wallet_name = wallet_manager.wallet_name if wallet_manager else "task_center"
-        hotkey_name = wallet_manager.hotkey_name if wallet_manager else "default"
-        self.bittensor_client = BittensorClient(wallet_name, hotkey_name, yaml_config=yaml_config)
+        self.bittensor_client = BittensorClient(self.wallet_name, self.hotkey_name, yaml_config=yaml_config)
 
         self.is_running = False
         self._score_task = None

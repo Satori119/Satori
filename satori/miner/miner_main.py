@@ -28,8 +28,9 @@ from satori.miner.services.gpu_manager import GPUManager
 from satori.miner.services.bittensor_sync import BittensorSyncService
 from satori.miner.services.task_monitor_service import TaskMonitorService
 from satori.common.services.auto_update import AutoUpdateService
-from satori.common.bittensor.wallet import WalletManager
+import bittensor as bt
 from satori.common.config import settings
+from satori.common.utils.logging import setup_logger as setup_logger_base
 from satori.common.utils.thread_pool import get_thread_pool
 from satori.miner import shared
 
@@ -67,10 +68,12 @@ if yaml_config:
     queue_manager.training_service = training_service
 
 shared.queue_manager = queue_manager
-wallet_manager = WalletManager(wallet_name, hotkey_name)
-shared.wallet_manager = wallet_manager
+wallet = bt.wallet(name=wallet_name, hotkey=hotkey_name)
+shared.wallet = wallet
+shared.wallet_name = wallet_name
+shared.hotkey_name = hotkey_name
 shared.yaml_config = yaml_config
-bittensor_sync = BittensorSyncService(wallet_manager, yaml_config=yaml_config)
+bittensor_sync = BittensorSyncService(wallet, wallet_name, hotkey_name, yaml_config=yaml_config)
 
 if yaml_config:
     github_repo = yaml_config.get_github_repo()
@@ -88,7 +91,7 @@ auto_update = AutoUpdateService(
     restart_delay=auto_update_config.get('restart_delay', 10)
 )
 
-task_monitor = TaskMonitorService(wallet_manager, yaml_config)
+task_monitor = TaskMonitorService(wallet, wallet_name, hotkey_name, yaml_config)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -96,8 +99,14 @@ async def lifespan(app: FastAPI):
     reinitialize_all_loggers(log_file)
 
     logger.info("Miner service starting up")
-    logger.info(f"Miner hotkey: {wallet_manager.get_hotkey()}")
-    logger.info(f"Miner balance: {wallet_manager.get_balance()} TAO")
+    logger.info(f"Miner hotkey: {wallet.hotkey.ss58_address}")
+    try:
+        subtensor = bt.subtensor(network=yaml_config.get_chain_endpoint() if yaml_config and yaml_config.get_chain_endpoint() else "finney")
+        balance = float(subtensor.get_balance(wallet.coldkeypub.ss58_address))
+        logger.info(f"Miner balance: {balance} TAO")
+    except Exception as e:
+        logger.warning(f"Failed to get balance: {e}")
+        logger.info("Miner balance: unavailable")
     logger.info(f"Config loaded from: {config_path if yaml_config else 'default'}")
 
     # Register axon on Bittensor chain
@@ -110,13 +119,19 @@ async def lifespan(app: FastAPI):
 
         logger.info(f"Registering axon on chain: ip={axon_ip}, port={axon_port}, netuid={netuid}")
         try:
-            success = wallet_manager.serve_axon(
-                netuid=netuid,
+            if chain_endpoint:
+                subtensor = bt.subtensor(network=chain_endpoint)
+            else:
+                subtensor = bt.subtensor(network="finney")
+            
+            axon = bt.axon(
+                wallet=wallet,
                 ip=axon_ip,
                 port=axon_port,
-                external_ip=axon_external_ip,
-                chain_endpoint=chain_endpoint
+                external_ip=axon_external_ip
             )
+            
+            success = subtensor.serve_axon(netuid=netuid, axon=axon)
             if success:
                 logger.info("Axon registration successful")
             else:

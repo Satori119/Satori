@@ -59,7 +59,7 @@ class YamlConfig:
         return self.get('auto_update.github_repo')
     
     def get_auto_update_enabled(self) -> bool:
-        return self.get('auto_update.enabled', True)
+        return self.get('auto_update.enabled', False)
     
     def get_auto_update_interval(self) -> int:
         return self.get('auto_update.check_interval', 300)

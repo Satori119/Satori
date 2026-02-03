@@ -29,7 +29,7 @@ from satori.validator.services.bittensor_sync import BittensorSyncService
 from satori.validator.services.task_processor import TaskProcessor
 from satori.validator.services.weight_sync_service import WeightSyncService
 from satori.common.services.auto_update import AutoUpdateService
-from satori.common.bittensor.wallet import WalletManager
+import bittensor as bt
 from satori.common.config import settings
 from satori.common.utils.thread_pool import get_thread_pool
 from satori.common.database import SessionLocal
@@ -50,15 +50,17 @@ else:
     task_center_url = settings.TASK_CENTER_URL
     auto_update_config = {}
 
-wallet_manager = WalletManager(wallet_name, hotkey_name)
-bittensor_sync = BittensorSyncService(wallet_manager, yaml_config=yaml_config)
-task_processor = TaskProcessor(wallet_manager, yaml_config=yaml_config)
+wallet = bt.wallet(name=wallet_name, hotkey=hotkey_name)
+bittensor_sync = BittensorSyncService(wallet, wallet_name, hotkey_name, yaml_config=yaml_config)
+task_processor = TaskProcessor(wallet, wallet_name, hotkey_name, yaml_config=yaml_config)
 
 db_session = SessionLocal()
 
 weight_sync_interval = yaml_config.get('validator.weight_sync_interval', 1800) if yaml_config else 1800
 weight_sync_service = WeightSyncService(
-    wallet_manager=wallet_manager,
+    wallet=wallet,
+    wallet_name=wallet_name,
+    hotkey_name=hotkey_name,
     bittensor_sync=bittensor_sync,
     sync_interval=weight_sync_interval,
     yaml_config=yaml_config,
@@ -87,8 +89,14 @@ async def lifespan(app: FastAPI):
     reinitialize_all_loggers(log_file)
 
     logger.info("Validator service starting up")
-    logger.info(f"Validator hotkey: {wallet_manager.get_hotkey()}")
-    logger.info(f"Validator balance: {wallet_manager.get_balance()} TAO")
+    logger.info(f"Validator hotkey: {wallet.hotkey.ss58_address}")
+    try:
+        subtensor = bt.subtensor(network=yaml_config.get_chain_endpoint() if yaml_config and yaml_config.get_chain_endpoint() else "finney")
+        balance = float(subtensor.get_balance(wallet.coldkeypub.ss58_address))
+        logger.info(f"Validator balance: {balance} TAO")
+    except Exception as e:
+        logger.warning(f"Failed to get balance: {e}")
+        logger.info("Validator balance: unavailable")
     logger.info(f"Config loaded from: {config_path if yaml_config else 'default'}")
 
     if yaml_config and yaml_config.get_axon_enabled():
@@ -100,13 +108,19 @@ async def lifespan(app: FastAPI):
 
         logger.info(f"Registering axon on chain: ip={axon_ip}, port={axon_port}, netuid={netuid}")
         try:
-            success = wallet_manager.serve_axon(
-                netuid=netuid,
+            if chain_endpoint:
+                subtensor = bt.subtensor(network=chain_endpoint)
+            else:
+                subtensor = bt.subtensor(network="finney")
+            
+            axon = bt.axon(
+                wallet=wallet,
                 ip=axon_ip,
                 port=axon_port,
-                external_ip=axon_external_ip,
-                chain_endpoint=chain_endpoint
+                external_ip=axon_external_ip
             )
+            
+            success = subtensor.serve_axon(netuid=netuid, axon=axon)
             if success:
                 logger.info("Axon registration successful")
             else:
@@ -180,10 +194,16 @@ app.include_router(router, prefix="/v1")
 @app.get("/health")
 async def health_check():
     try:
+        hotkey = wallet.hotkey.ss58_address
+        try:
+            subtensor = bt.subtensor(network=yaml_config.get_chain_endpoint() if yaml_config and yaml_config.get_chain_endpoint() else "finney")
+            balance = float(subtensor.get_balance(wallet.coldkeypub.ss58_address))
+        except Exception:
+            balance = 0.0
         return {
             "status": "ok",
-            "hotkey": wallet_manager.get_hotkey(),
-            "balance": wallet_manager.get_balance()
+            "hotkey": hotkey,
+            "balance": balance
         }
     except Exception as e:
         logger.error(f"Health check error: {e}", exc_info=True)

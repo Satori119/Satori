@@ -1,7 +1,6 @@
 from sqlalchemy.orm import Session
 from typing import Dict, List, Optional
 from satori.task_center.services.score_archive import ScoreArchive
-from satori.common.bittensor.wallet import WalletManager
 from satori.common.config.yaml_config import YamlConfig
 from satori.common.utils.logging import setup_logger
 from satori.task_center import shared
@@ -14,9 +13,11 @@ logger = setup_logger(__name__)
 class ConsensusSync:
     def __init__(self, db: Session):
         self.db = db
-        wallet_manager = shared.wallet_manager
+        wallet = shared.wallet if hasattr(shared, 'wallet') else None
+        wallet_name = shared.wallet_name if hasattr(shared, 'wallet_name') else None
+        hotkey_name = shared.hotkey_name if hasattr(shared, 'hotkey_name') else None
         yaml_config = shared.yaml_config
-        self.score_archive = ScoreArchive(db, wallet_manager=wallet_manager, yaml_config=yaml_config)
+        self.score_archive = ScoreArchive(db, wallet=wallet, wallet_name=wallet_name, hotkey_name=hotkey_name, yaml_config=yaml_config)
     
     def aggregate_scores(self, task_id: str) -> Dict[str, float]:
         all_scores = self.score_archive.get_all_scores_for_task(task_id)

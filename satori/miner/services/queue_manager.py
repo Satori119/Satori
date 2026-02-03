@@ -94,10 +94,10 @@ class QueueManager:
         miner_key = None
         try:
             from satori.miner import shared
-            if shared.wallet_manager:
-                miner_key = shared.wallet_manager.get_hotkey()
+            if shared.wallet:
+                miner_key = shared.wallet.hotkey.ss58_address
         except Exception as e:
-            logger.warning(f"Failed to get miner_key from wallet_manager: {e}")
+            logger.warning(f"Failed to get miner_key from wallet: {e}")
 
         queue_task = QueuedTask(task_id, priority, task_type, task_data, miner_key=miner_key)
 
@@ -592,9 +592,9 @@ class QueueManager:
         signature_auth = None
         try:
             from satori.miner import shared
-            if shared.wallet_manager:
+            if shared.wallet:
                 from satori.common.crypto.signature import SignatureAuth
-                signature_auth = SignatureAuth(shared.wallet_manager.wallet)
+                signature_auth = SignatureAuth(shared.wallet)
         except Exception as e:
             logger.warning(f"Task {task.task_id}: Failed to init signature auth: {e}")
 

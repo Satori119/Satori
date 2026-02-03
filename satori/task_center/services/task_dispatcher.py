@@ -133,7 +133,7 @@ class TaskDispatcher:
         
         stake = self.bittensor_client.get_miner_stake(miner_key)
         
-        if stake < 200.0:
+        if stake < 1000.0:
             logger.warning(f"Miner {miner_key} stake too low: {stake}")
             return None
         

@@ -1,8 +1,8 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import List, Dict, Optional
+import bittensor as bt
 from satori.common.models.score import Score
-from satori.common.bittensor.wallet import WalletManager
 from satori.common.config.yaml_config import YamlConfig
 from satori.task_center.schemas.score import ScoreSubmit
 from satori.common.utils.logging import setup_logger
@@ -10,9 +10,11 @@ from satori.common.utils.logging import setup_logger
 logger = setup_logger(__name__)
 
 class ScoreArchive:
-    def __init__(self, db: Session, wallet_manager: Optional[WalletManager] = None, yaml_config: Optional[YamlConfig] = None):
+    def __init__(self, db: Session, wallet: Optional[bt.wallet] = None, wallet_name: Optional[str] = None, hotkey_name: Optional[str] = None, yaml_config: Optional[YamlConfig] = None):
         self.db = db
-        self.wallet_manager = wallet_manager
+        self.wallet = wallet
+        self.wallet_name = wallet_name
+        self.hotkey_name = hotkey_name
         self.yaml_config = yaml_config
     
     def submit_score(self, score_data: ScoreSubmit):
@@ -44,7 +46,7 @@ class ScoreArchive:
         if len(completed_audits) >= 3:
             latest_audit = max(completed_audits, key=lambda x: x.completed_at or x.created_at)
             
-            reward_distributor = ContinuousRewardDistributor(self.db, wallet_manager=self.wallet_manager, yaml_config=self.yaml_config)
+            reward_distributor = ContinuousRewardDistributor(self.db, wallet=self.wallet, wallet_name=self.wallet_name, hotkey_name=self.hotkey_name, yaml_config=self.yaml_config)
             try:
                 rewards = reward_distributor.distribute_rewards_for_completed_audit(
                     latest_audit.audit_task_id,

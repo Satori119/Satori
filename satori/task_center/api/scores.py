@@ -24,7 +24,7 @@ async def submit_score(
         logger.warning(f"Score submission rejected for task {score_data.task_id}: {reason}")
         raise HTTPException(status_code=400, detail=f"Scoring not allowed: {reason}")
 
-    archive = ScoreArchive(db, wallet_manager=shared.wallet_manager, yaml_config=shared.yaml_config)
+    archive = ScoreArchive(db, wallet=shared.wallet, wallet_name=shared.wallet_name, hotkey_name=shared.hotkey_name, yaml_config=shared.yaml_config)
     archive.submit_score(score_data)
     return {"status": "success", "message": "Score submitted successfully"}
 
@@ -36,7 +36,7 @@ async def query_score(
     request: Request = None,
     db: Session = Depends(get_db)
 ):
-    archive = ScoreArchive(db, wallet_manager=shared.wallet_manager, yaml_config=shared.yaml_config)
+    archive = ScoreArchive(db, wallet=shared.wallet, wallet_name=shared.wallet_name, hotkey_name=shared.hotkey_name, yaml_config=shared.yaml_config)
     scores = archive.get_miner_scores(miner_hotkey, task_id)
 
     if not scores:
@@ -55,7 +55,7 @@ async def get_all_scores(
     request: Request,
     db: Session = Depends(get_db)
 ):
-    archive = ScoreArchive(db, wallet_manager=shared.wallet_manager, yaml_config=shared.yaml_config)
+    archive = ScoreArchive(db, wallet=shared.wallet, wallet_name=shared.wallet_name, hotkey_name=shared.hotkey_name, yaml_config=shared.yaml_config)
     consensus_sync = ConsensusSync(db)
 
     scores = archive.get_all_scores_for_task(task_id)
@@ -74,7 +74,7 @@ async def query_all_scores(
     request: Request = None,
     db: Session = Depends(get_db)
 ):
-    archive = ScoreArchive(db, wallet_manager=shared.wallet_manager, yaml_config=shared.yaml_config)
+    archive = ScoreArchive(db, wallet=shared.wallet, wallet_name=shared.wallet_name, hotkey_name=shared.hotkey_name, yaml_config=shared.yaml_config)
     consensus_sync = ConsensusSync(db)
 
     if task_id:
@@ -97,8 +97,8 @@ async def query_all_scores(
         from satori.common.models.score import Score
         from satori.common.bittensor.client import BittensorClient
 
-        wallet_name = shared.wallet_manager.wallet_name if shared.wallet_manager else "task_center"
-        hotkey_name = shared.wallet_manager.hotkey_name if shared.wallet_manager else "default"
+        wallet_name = shared.wallet_name if hasattr(shared, 'wallet_name') and shared.wallet_name else "task_center"
+        hotkey_name = shared.hotkey_name if hasattr(shared, 'hotkey_name') and shared.hotkey_name else "default"
         bittensor_client = BittensorClient(wallet_name, hotkey_name, yaml_config=shared.yaml_config)
 
         registered_miners = bittensor_client.get_all_miners()

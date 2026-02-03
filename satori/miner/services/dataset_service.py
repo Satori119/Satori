@@ -14,8 +14,10 @@ DATASET_VALIDATION_MAX_WAIT_TIME = 3600
 
 class DatasetService:
 
-    def __init__(self, wallet_manager=None, yaml_config=None):
-        self.wallet_manager = wallet_manager
+    def __init__(self, wallet=None, wallet_name=None, hotkey_name=None, yaml_config=None):
+        self.wallet = wallet
+        self.wallet_name = wallet_name
+        self.hotkey_name = hotkey_name
         self.yaml_config = yaml_config
         self.task_center_url = settings.TASK_CENTER_URL
         if yaml_config:
@@ -27,10 +29,10 @@ class DatasetService:
         dataset_url: str,
         dataset_description: Optional[str] = None
     ) -> Dict[str, Any]:
-        if not self.wallet_manager:
-            return {"success": False, "error": "Wallet manager not initialized"}
+        if not self.wallet:
+            return {"success": False, "error": "Wallet not initialized"}
 
-        miner_hotkey = self.wallet_manager.get_hotkey()
+        miner_hotkey = self.wallet.hotkey.ss58_address
 
         submission_data = {
             "task_id": task_id,
@@ -89,10 +91,10 @@ class DatasetService:
         return {"success": False, "error": last_error}
 
     async def check_validation_status(self, task_id: str) -> Dict[str, Any]:
-        if not self.wallet_manager:
-            return {"status": "error", "error": "Wallet manager not initialized"}
+        if not self.wallet:
+            return {"status": "error", "error": "Wallet not initialized"}
 
-        miner_hotkey = self.wallet_manager.get_hotkey()
+        miner_hotkey = self.wallet.hotkey.ss58_address
 
         status_url = f"{self.task_center_url}/v1/miners/dataset/status"
 

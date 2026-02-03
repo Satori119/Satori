@@ -4,7 +4,7 @@ from typing import Optional
 from satori.common.models.task import Task, TaskStatus
 from satori.common.utils.logging import setup_logger
 from satori.common.config.yaml_config import YamlConfig
-from satori.common.bittensor.wallet import WalletManager
+import bittensor as bt
 from satori.task_center.services.miner_cache import MinerCache
 import asyncio
 
@@ -16,12 +16,16 @@ class TaskLifecycleManager:
         self,
         db: Session,
         miner_cache: Optional[MinerCache] = None,
-        wallet_manager: Optional[WalletManager] = None,
+        wallet: Optional[bt.wallet] = None,
+        wallet_name: Optional[str] = None,
+        hotkey_name: Optional[str] = None,
         yaml_config: Optional[YamlConfig] = None
     ):
         self.db = db
         self.miner_cache = miner_cache
-        self.wallet_manager = wallet_manager
+        self.wallet = wallet
+        self.wallet_name = wallet_name
+        self.hotkey_name = hotkey_name
         self.yaml_config = yaml_config
         self.is_running = False
         self._lifecycle_task = None

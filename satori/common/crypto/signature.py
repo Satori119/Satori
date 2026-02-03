@@ -63,7 +63,7 @@ class SignatureAuth:
             current_time = int(time.time())
             request_time = int(timestamp)
             
-            max_age = 1800
+            max_age = 300
             if abs(current_time - request_time) > max_age:
                 logger.warning(f"Signature timestamp expired: {current_time - request_time}s (max: {max_age}s)")
                 return False

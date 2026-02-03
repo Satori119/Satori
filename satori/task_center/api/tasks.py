@@ -276,7 +276,7 @@ async def get_task_phase(
     from satori.common.crypto.signature import SignatureAuth
     from satori.task_center import shared
 
-    signature_auth = SignatureAuth(shared.wallet_manager.wallet)
+    signature_auth = SignatureAuth(shared.wallet)
     is_valid = signature_auth.verify_signature(
         signature=x_signature,
         message=x_message,

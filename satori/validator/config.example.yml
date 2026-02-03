@@ -18,7 +18,6 @@ axon:
 validator:
   sync_interval: 60
   validators_per_task: 3
-  weight_sync_interval: 1800
 
 auto_update:
   enabled: true

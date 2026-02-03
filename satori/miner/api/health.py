@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Request, HTTPException, Header
 from satori.common.utils.logging import setup_logger
-from satori.common.bittensor.wallet import WalletManager
+import bittensor as bt
 from satori.common.crypto.signature import SignatureAuth
 from satori.common.config import settings, load_yaml_config
 from datetime import datetime, timezone
@@ -19,8 +19,8 @@ else:
     wallet_name = "miner"
     hotkey_name = "default"
 
-wallet_manager = WalletManager(wallet_name, hotkey_name)
-signature_auth = SignatureAuth(wallet_manager.wallet)
+wallet = bt.wallet(name=wallet_name, hotkey=hotkey_name)
+signature_auth = SignatureAuth(wallet)
 
 
 @router.post("/heartbeat")
@@ -51,7 +51,7 @@ async def heartbeat(
         
         response_data = {
             "status": "online",
-            "hotkey": wallet_manager.get_hotkey(),
+            "hotkey": wallet.hotkey.ss58_address,
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
         

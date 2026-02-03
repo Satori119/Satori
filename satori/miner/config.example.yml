@@ -19,10 +19,11 @@ miner:
   min_stake: 200.0
 
 auto_update:
-  enabled: true
+  enabled: false
   github_repo: Satori119/Satori
   branch: main
-  
+  check_interval: 1200
+  restart_delay: 30
 
 huggingface:
   token: <HF_TOKEN>

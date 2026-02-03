@@ -8,7 +8,7 @@ from satori.common.models.score import Score
 from satori.common.models.workflow_type import WorkflowType
 from satori.common.services.reward import RewardService
 from satori.common.services.scoring import ScoringService
-from satori.common.bittensor.wallet import WalletManager
+import bittensor as bt
 from satori.common.config.yaml_config import YamlConfig
 from satori.task_center.services.task_lifecycle_manager import TaskLifecycleManager
 from satori.task_center.services.score_archive import ScoreArchive
@@ -20,12 +20,12 @@ logger = setup_logger(__name__)
 
 class ContinuousRewardDistributor:
 
-    def __init__(self, db: Session, wallet_manager: Optional[WalletManager] = None, yaml_config: Optional[YamlConfig] = None):
+    def __init__(self, db: Session, wallet: Optional[bt.wallet] = None, wallet_name: Optional[str] = None, hotkey_name: Optional[str] = None, yaml_config: Optional[YamlConfig] = None):
         self.db = db
         self.reward_service = RewardService()
         self.scoring_service = ScoringService()
         self.lifecycle_manager = TaskLifecycleManager(db)
-        self.score_archive = ScoreArchive(db, wallet_manager=wallet_manager, yaml_config=yaml_config)
+        self.score_archive = ScoreArchive(db, wallet=wallet, wallet_name=wallet_name, hotkey_name=hotkey_name, yaml_config=yaml_config)
 
     def _get_reward_phase_task_types(self) -> Tuple[bool, bool]:
         reward_tasks = self.db.query(Task).filter(

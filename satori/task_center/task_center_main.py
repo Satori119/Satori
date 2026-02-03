@@ -51,7 +51,7 @@ from satori.common.database import SessionLocal
 from satori.task_center.services.task_lifecycle_manager import TaskLifecycleManager
 from satori.task_center.services.miner_health_checker import MinerHealthChecker
 from satori.task_center.services.idle_reward_distributor import IdleRewardDistributor
-from satori.common.bittensor.wallet import WalletManager
+import bittensor as bt
 from satori.common.utils.thread_pool import get_thread_pool
 from satori.task_center.shared import miner_cache, bittensor_client
 import satori.task_center.shared as shared_instances
@@ -87,8 +87,10 @@ except Exception as e:
     logger.warning(f"Bittensor client initialization failed (service will continue): {e}")
     shared_instances.bittensor_client = None
 
-task_center_wallet_manager = WalletManager(wallet_name, hotkey_name)
-shared_instances.wallet_manager = task_center_wallet_manager
+task_center_wallet = bt.wallet(name=wallet_name, hotkey=hotkey_name)
+shared_instances.wallet = task_center_wallet
+shared_instances.wallet_name = wallet_name
+shared_instances.hotkey_name = hotkey_name
 shared_instances.yaml_config = yaml_config
 
 if yaml_config:
@@ -133,7 +135,9 @@ async def lifespan(app: FastAPI):
         db = SessionLocal()
         lifecycle_manager = TaskLifecycleManager(
             db,
-            wallet_manager=task_center_wallet_manager,
+            wallet=task_center_wallet,
+            wallet_name=wallet_name,
+            hotkey_name=hotkey_name,
             yaml_config=yaml_config
         )
         await lifecycle_manager.start()
@@ -147,8 +151,10 @@ async def lifespan(app: FastAPI):
         heartbeat_timeout = yaml_config.get('task_center.miner_heartbeat_timeout', 120) if yaml_config else 120
         miner_health_checker = MinerHealthChecker(
             db,
-            task_center_wallet_manager,
-            miner_cache,
+            wallet=task_center_wallet,
+            wallet_name=wallet_name,
+            hotkey_name=hotkey_name,
+            miner_cache=miner_cache,
             check_interval=check_interval,
             heartbeat_timeout=heartbeat_timeout,
             yaml_config=yaml_config
@@ -163,7 +169,9 @@ async def lifespan(app: FastAPI):
         idle_score_interval = yaml_config.get('task_center.idle_score_interval', 360) if yaml_config else 360
         idle_reward_distributor = IdleRewardDistributor(
             db,
-            wallet_manager=task_center_wallet_manager,
+            wallet=task_center_wallet,
+            wallet_name=wallet_name,
+            hotkey_name=hotkey_name,
             yaml_config=yaml_config,
             score_interval=idle_score_interval
         )

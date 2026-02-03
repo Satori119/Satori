@@ -69,7 +69,6 @@ class ImageTrainingService:
         logger.info(f"[ImageTrainingService] Starting image LoRA training for task {task_id}")
 
         model_path = self.models_dir / task_id
-        
         workflow_spec = task.get("workflow_spec", {})
         training_spec = workflow_spec.get("training_spec", {})
         dataset_spec = workflow_spec.get("dataset_spec", {})

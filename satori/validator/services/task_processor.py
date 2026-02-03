@@ -7,14 +7,16 @@ from satori.common.utils.logging import setup_logger
 from satori.common.config.yaml_config import YamlConfig
 import httpx
 from satori.common.config import settings
-from satori.common.bittensor.wallet import WalletManager
+import bittensor as bt
 
 logger = setup_logger(__name__)
 
 class TaskProcessor:
 
-    def __init__(self, wallet_manager: WalletManager, yaml_config: Optional[YamlConfig] = None):
-        self.wallet_manager = wallet_manager
+    def __init__(self, wallet: bt.wallet, wallet_name: str, hotkey_name: str, yaml_config: Optional[YamlConfig] = None):
+        self.wallet = wallet
+        self.wallet_name = wallet_name
+        self.hotkey_name = hotkey_name
         self.yaml_config = yaml_config
         self.audit_validator = AuditValidator()
         self.score_calculator = ScoreCalculator()
@@ -74,7 +76,7 @@ class TaskProcessor:
 
     async def _process_pending_tasks(self):
         try:
-            validator_key = self.wallet_manager.get_hotkey()
+            validator_key = self.wallet.hotkey.ss58_address
             task_center_url = self.task_center_url
 
             logger.debug(f"Fetching pending audit tasks for validator {validator_key[:20]}...")
@@ -217,7 +219,7 @@ class TaskProcessor:
         result: Dict[str, Any],
         score: float
     ):
-        validator_hotkey = self.wallet_manager.get_hotkey()
+        validator_hotkey = self.wallet.hotkey.ss58_address
         task_center_url = self.task_center_url
 
         score_data = {
@@ -260,7 +262,7 @@ class TaskProcessor:
         validation_result: Dict[str, Any],
         rejection_reason: Optional[str] = None
     ):
-        validator_hotkey = self.wallet_manager.get_hotkey()
+        validator_hotkey = self.wallet.hotkey.ss58_address
         task_center_url = self.task_center_url
 
         validation_data = {

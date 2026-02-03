@@ -1,8 +1,8 @@
 import asyncio
 import threading
 from typing import Optional
+import bittensor as bt
 from satori.common.bittensor.client import BittensorClient
-from satori.common.bittensor.wallet import WalletManager
 from satori.common.config.yaml_config import YamlConfig
 from satori.common.utils.logging import setup_logger
 from satori.common.utils.thread_pool import get_thread_pool
@@ -11,10 +11,10 @@ from satori.common.utils.retry import retry_sync_with_backoff
 logger = setup_logger(__name__)
 
 class BittensorSyncService:
-    def __init__(self, wallet_manager: WalletManager, yaml_config: Optional[YamlConfig] = None):
-        self.wallet_manager = wallet_manager
-        wallet_name = wallet_manager.wallet_name if wallet_manager else "validator"
-        hotkey_name = wallet_manager.hotkey_name if wallet_manager else "default"
+    def __init__(self, wallet: bt.wallet, wallet_name: str, hotkey_name: str, yaml_config: Optional[YamlConfig] = None):
+        self.wallet = wallet
+        self.wallet_name = wallet_name
+        self.hotkey_name = hotkey_name
         self.client = BittensorClient(wallet_name, hotkey_name, yaml_config=yaml_config)
         self.is_running = False
         self.sync_interval = 60

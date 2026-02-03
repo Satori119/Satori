@@ -1,9 +1,11 @@
 from satori.miner.services.queue_manager import QueueManager
-from satori.common.bittensor.wallet import WalletManager
+import bittensor as bt
 from satori.common.config.yaml_config import YamlConfig
 from typing import Optional
 
 queue_manager: QueueManager = None
-wallet_manager: Optional[WalletManager] = None
+wallet: Optional[bt.wallet] = None
+wallet_name: Optional[str] = None
+hotkey_name: Optional[str] = None
 yaml_config: Optional[YamlConfig] = None
 

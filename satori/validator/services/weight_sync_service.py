@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from satori.common.utils.logging import setup_logger
 from satori.common.config import settings
 from satori.common.config.yaml_config import YamlConfig
-from satori.common.bittensor.wallet import WalletManager
+import bittensor as bt
 from satori.validator.services.bittensor_sync import BittensorSyncService
 from satori.validator.services.score_calculator import ScoreCalculator
 from satori.validator.services.ema_weight_service import EmaWeightService
@@ -17,13 +17,17 @@ class WeightSyncService:
 
     def __init__(
         self,
-        wallet_manager: WalletManager,
+        wallet: bt.wallet,
+        wallet_name: str,
+        hotkey_name: str,
         bittensor_sync: BittensorSyncService,
-        sync_interval: int = 1800,
+        sync_interval: int = 3600,
         yaml_config: Optional[YamlConfig] = None,
         db_session: Optional[Session] = None
     ):
-        self.wallet_manager = wallet_manager
+        self.wallet = wallet
+        self.wallet_name = wallet_name
+        self.hotkey_name = hotkey_name
         self.bittensor_sync = bittensor_sync
         self.score_calculator = ScoreCalculator()
         self.sync_interval = sync_interval
@@ -42,11 +46,11 @@ class WeightSyncService:
 
     def _get_ema_service(self) -> Optional[EmaWeightService]:
         if self._ema_service is None and self.db_session is not None:
-            if self.wallet_manager is None or self.wallet_manager.wallet is None:
-                logger.warning("Wallet manager not initialized, cannot create EMA service")
+            if self.wallet is None:
+                logger.warning("Wallet not initialized, cannot create EMA service")
                 return None
             try:
-                validator_hotkey = self.wallet_manager.wallet.hotkey.ss58_address
+                validator_hotkey = self.wallet.hotkey.ss58_address
                 self._ema_service = EmaWeightService(
                     db=self.db_session,
                     validator_hotkey=validator_hotkey

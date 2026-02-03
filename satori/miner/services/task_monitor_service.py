@@ -13,14 +13,16 @@ DATASET_SUBMISSION_RETRY_INTERVAL = 300
 
 class TaskMonitorService:
 
-    def __init__(self, wallet_manager=None, yaml_config=None):
-        self.wallet_manager = wallet_manager
+    def __init__(self, wallet=None, wallet_name=None, hotkey_name=None, yaml_config=None):
+        self.wallet = wallet
+        self.wallet_name = wallet_name
+        self.hotkey_name = hotkey_name
         self.yaml_config = yaml_config
         self.task_center_url = settings.TASK_CENTER_URL
         if yaml_config:
             self.task_center_url = yaml_config.get_task_center_url() or self.task_center_url
 
-        self.dataset_service = DatasetService(wallet_manager, yaml_config)
+        self.dataset_service = DatasetService(wallet, wallet_name, hotkey_name, yaml_config)
         self.is_running = False
         self._monitor_task = None
         self.submitted_datasets: Dict[str, str] = {}
@@ -129,10 +131,10 @@ class TaskMonitorService:
                 logger.warning(f"Task {task_id}: Dataset submission failed: {result.get('error')}")
 
     async def _get_available_tasks(self) -> List[Dict[str, Any]]:
-        if not self.wallet_manager:
+        if not self.wallet:
             return []
 
-        miner_hotkey = self.wallet_manager.get_hotkey()
+        miner_hotkey = self.wallet.hotkey.ss58_address
         tasks_url = f"{self.task_center_url}/v1/miners/tasks/available"
 
         try:
