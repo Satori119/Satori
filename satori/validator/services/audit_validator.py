@@ -124,10 +124,12 @@ class AuditValidator:
                     except Exception:
                         pass
             
+            # Clear CUDA cache
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
                 torch.cuda.synchronize()
             
+            # Force garbage collection
             gc.collect()
             
         except Exception as e:
@@ -476,13 +478,16 @@ class AuditValidator:
                 pipe = self._image_pipelines[base_model]
                 logger.debug(f"Using cached pipeline for base model: {base_model}")
 
+            # Always try to unload previous LoRA weights before loading new ones
+            # This prevents the "multiple adapters" warning
             try:
                 if self._current_lora.get(base_model) is not None:
                     logger.debug(f"Unloading previous LoRA weights")
-
+                # Unload even if not tracked (in case of previous incomplete cleanup)
                 pipe.unload_lora_weights()
                 self._current_lora[base_model] = None
             except Exception as e:
+                # Ignore errors if no LoRA was loaded
                 logger.debug(f"No previous LoRA to unload or unload failed: {e}")
 
             try:
@@ -490,6 +495,7 @@ class AuditValidator:
                 lora_loaded = False
 
                 try:
+                    # Suppress the "multiple adapters" warning as we've already unloaded
                     with warnings.catch_warnings():
                         warnings.filterwarnings("ignore", message=".*peft_config.*")
                         warnings.filterwarnings("ignore", message=".*multiple adapters.*")
@@ -517,6 +523,7 @@ class AuditValidator:
 
             logger.info(f"Generating image with prompt: {prompt[:50]}...")
             
+            # Use torch.inference_mode() to reduce memory usage
             with torch.inference_mode():
                 result = pipe(
                     prompt,
@@ -528,6 +535,7 @@ class AuditValidator:
             image = result.images[0]
             logger.info("Image generated successfully")
 
+            # Clean up only result and generator (pipeline stays in cache)
             self._cleanup_gpu_memory(result, generator)
 
             return image
@@ -587,13 +595,14 @@ class AuditValidator:
             text = tokenizer.decode(outputs[0], skip_special_tokens=True)
             logger.info(f"Text generated: {len(text)} characters")
 
+            # Clean up GPU memory
             self._cleanup_gpu_memory(model, tokenizer, inputs, outputs)
 
             return text
 
         except Exception as e:
             logger.error(f"Text generation failed: {e}", exc_info=True)
-
+            # Clean up GPU memory even on error
             try:
                 if 'model' in locals():
                     self._cleanup_gpu_memory(model)

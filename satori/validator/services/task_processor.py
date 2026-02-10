@@ -2,24 +2,36 @@ import asyncio
 from typing import Dict, Any, Optional
 from satori.validator.services.audit_validator import AuditValidator
 from satori.validator.services.score_calculator import ScoreCalculator
+from satori.validator.services.score_cache import ScoreCache
 from satori.validator.schemas.audit import AuditTaskRequest
 from satori.common.utils.logging import setup_logger
 from satori.common.config.yaml_config import YamlConfig
 import httpx
 from satori.common.config import settings
 import bittensor as bt
+import secrets
+import time
+from satori.common.crypto.signature import SignatureAuth
 
 logger = setup_logger(__name__)
 
 class TaskProcessor:
 
-    def __init__(self, wallet: bt.wallet, wallet_name: str, hotkey_name: str, yaml_config: Optional[YamlConfig] = None):
+    def __init__(
+        self,
+        wallet: bt.wallet,
+        wallet_name: str,
+        hotkey_name: str,
+        score_cache: Optional[ScoreCache] = None,
+        yaml_config: Optional[YamlConfig] = None
+    ):
         self.wallet = wallet
         self.wallet_name = wallet_name
         self.hotkey_name = hotkey_name
         self.yaml_config = yaml_config
         self.audit_validator = AuditValidator()
         self.score_calculator = ScoreCalculator()
+        self.score_cache = score_cache or ScoreCache()  # 注入 ScoreCache
         self.is_running = False
         self.process_interval = 60
         self._process_task = None
@@ -30,6 +42,8 @@ class TaskProcessor:
         else:
             self.task_center_url = settings.TASK_CENTER_URL
             self.api_key = getattr(settings, 'API_KEY', None)
+        
+        self.signature_auth = SignatureAuth(wallet)
 
     def _get_headers(self) -> Dict[str, str]:
         """Get request headers with API Key if configured"""
@@ -37,6 +51,10 @@ class TaskProcessor:
         if self.api_key:
             headers["X-API-Key"] = self.api_key
         return headers
+    
+    def _get_sig_headers(self, endpoint: str) -> Dict[str, str]:
+        nonce = f"{int(time.time())}_{secrets.token_hex(8)}"
+        return self.signature_auth.create_auth_headers_with_nonce(endpoint, nonce)
 
     async def start(self):
         if self.is_running:
@@ -85,7 +103,7 @@ class TaskProcessor:
                 response = await client.get(
                     f"{task_center_url}/v1/validators/pending",
                     params={"validator_key": validator_key},
-                    headers=self._get_headers()
+                    headers={**self._get_headers(), **self._get_sig_headers("/v1/validators/pending")}
                 )
 
                 if response.status_code == 200:
@@ -154,6 +172,23 @@ class TaskProcessor:
         lora_url: str,
         task_info: Dict[str, Any]
     ):
+        should_score = await self._check_miner_limit(task_id, miner_hotkey)
+        
+        if not should_score:
+            logger.info(
+                f"Task {task_id}: Miner {miner_hotkey[:20]}... "
+                f"exceeds reward limit, assigning 0 score"
+            )
+            self.score_cache.cache_score(
+                task_id=task_id,
+                miner_hotkey=miner_hotkey,
+                validator_hotkey=self.wallet.hotkey.ss58_address,
+                score=0.0,
+                score_details={"reason": "exceeds_reward_limit"}
+            )
+            await self._update_audit_task_status(audit_task_id, "completed", {"final_score": 0.0})
+            return
+        
         audit_request = AuditTaskRequest(
             audit_task_id=audit_task_id,
             miner_hotkey=miner_hotkey,
@@ -170,12 +205,18 @@ class TaskProcessor:
                    f"quality_score={result.get('quality_score', 0):.2f}, "
                    f"final_score={score:.2f}")
 
-        await self._submit_score(
+        self.score_cache.cache_score(
             task_id=task_id,
             miner_hotkey=miner_hotkey,
-            audit_task_id=audit_task_id,
-            result=result,
-            score=score
+            validator_hotkey=self.wallet.hotkey.ss58_address,
+            score=score,
+            score_details={
+                "cosine_similarity": result.get("cosine_similarity", 0.0),
+                "quality_score": result.get("quality_score", 0.0),
+                "content_safety_score": result.get("content_safety_score", 0.0),
+                "rejected": result.get("rejected", False),
+                "rejection_reason": result.get("reason", None)
+            }
         )
 
         await self._update_audit_task_status(audit_task_id, "completed", result)
@@ -211,47 +252,51 @@ class TaskProcessor:
 
         await self._update_audit_task_status(audit_task_id, "completed", result)
 
-    async def _submit_score(
-        self,
-        task_id: str,
-        miner_hotkey: str,
-        audit_task_id: str,
-        result: Dict[str, Any],
-        score: float
-    ):
-        validator_hotkey = self.wallet.hotkey.ss58_address
-        task_center_url = self.task_center_url
-
-        score_data = {
-            "task_id": task_id,
-            "miner_hotkey": miner_hotkey,
-            "validator_hotkey": validator_hotkey,
-            "audit_task_id": audit_task_id,
-            "cosine_similarity": result.get("cosine_similarity", 0.0),
-            "quality_score": result.get("quality_score", 0.0),
-            "final_score": score,
-            "content_safety_score": result.get("content_safety_score", 0.0),
-            "rejected": result.get("rejected", False),
-            "rejection_reason": result.get("reason", None)
-        }
-
+    async def _check_miner_limit(self, task_id: str, miner_hotkey: str) -> bool:
+        try:
+            task_config = await self._get_task_config(task_id)
+            default_reward_miners = task_config.get("default_reward_miners", 6)
+            
+            if default_reward_miners < settings.MIN_REWARD_MINERS:
+                default_reward_miners = settings.MIN_REWARD_MINERS
+            if default_reward_miners > settings.MAX_REWARD_MINERS:
+                default_reward_miners = settings.MAX_REWARD_MINERS
+            
+            cached_scores = self.score_cache.get_cached_scores_for_task(task_id)
+            
+            sorted_miners = sorted(
+                cached_scores,
+                key=lambda x: x["score"],
+                reverse=True
+            )
+            
+            if len(sorted_miners) >= default_reward_miners:
+                top_miners = [m["miner_hotkey"] for m in sorted_miners[:default_reward_miners]]
+                if miner_hotkey not in top_miners:
+                    return False
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error checking miner limit for task {task_id}: {e}", exc_info=True)
+            return True
+    
+    async def _get_task_config(self, task_id: str) -> Dict[str, Any]:
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.post(
-                    f"{task_center_url}/v1/scores/submit",
-                    json=score_data,
-                    headers=self._get_headers()
+                response = await client.get(
+                    f"{self.task_center_url}/v1/tasks/{task_id}/config",
+                    headers={**self._get_headers(), **self._get_sig_headers(f"/v1/tasks/{task_id}/config")}
                 )
-
+                
                 if response.status_code == 200:
-                    logger.info(f"Score submitted successfully for audit task {audit_task_id}")
+                    return response.json()
                 else:
-                    logger.warning(f"Score submission returned status {response.status_code}: {response.text[:200]}")
-
-        except httpx.HTTPError as e:
-            logger.error(f"HTTP error submitting score: {e}", exc_info=True)
+                    logger.warning(f"Failed to get task config: {response.status_code}")
+                    return {}
         except Exception as e:
-            logger.error(f"Error submitting score: {e}", exc_info=True)
+            logger.error(f"Error getting task config: {e}", exc_info=True)
+            return {}
 
     async def _submit_dataset_validation(
         self,
@@ -278,7 +323,7 @@ class TaskProcessor:
                 response = await client.post(
                     f"{task_center_url}/v1/validators/dataset/validation",
                     json=validation_data,
-                    headers=self._get_headers()
+                    headers={**self._get_headers(), **self._get_sig_headers("/v1/validators/dataset/validation")}
                 )
 
                 if response.status_code == 200:
@@ -308,7 +353,7 @@ class TaskProcessor:
                         "status": status,
                         "result": result
                     },
-                    headers=self._get_headers()
+                    headers={**self._get_headers(), **self._get_sig_headers("/v1/audit/update_status")}
                 )
 
                 if response.status_code == 200:

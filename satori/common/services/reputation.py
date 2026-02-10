@@ -4,7 +4,6 @@ from satori.common.utils.logging import setup_logger
 
 logger = setup_logger(__name__)
 
-
 class ReputationService:
 
     def __init__(self, alpha: float = 0.9):

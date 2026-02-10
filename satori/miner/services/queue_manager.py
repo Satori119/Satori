@@ -3,6 +3,8 @@ import concurrent.futures
 from enum import Enum
 from typing import Dict, Any, Optional
 from datetime import datetime, timezone
+import secrets
+import time
 import httpx
 from satori.common.utils.logging import setup_logger
 from satori.miner.services.training_service import TrainingService
@@ -514,6 +516,7 @@ class QueueManager:
         await self._wait_for_submission_window(task, task_center_url)
 
         submit_url = f"{task_center_url}/v1/miners/submit"
+        submit_endpoint = "/v1/miners/submit"
 
         last_error = None
         for attempt in range(1, SUBMISSION_MAX_RETRIES + 1):
@@ -521,10 +524,21 @@ class QueueManager:
                 logger.info(f"Task {task.task_id}: Submitting to task center (attempt {attempt}/{SUBMISSION_MAX_RETRIES})")
 
                 async with httpx.AsyncClient(timeout=60.0) as client:
+                    headers = {"Content-Type": "application/json"}
+                    try:
+                        from satori.miner import shared
+                        if shared.wallet:
+                            from satori.common.crypto.signature import SignatureAuth
+                            signature_auth = SignatureAuth(shared.wallet)
+                            nonce = f"{int(time.time())}_{secrets.token_hex(8)}"
+                            auth_headers = signature_auth.create_auth_headers_with_nonce(submit_endpoint, nonce)
+                            headers = {**auth_headers, "Content-Type": "application/json"}
+                    except Exception:
+                        pass
                     response = await client.post(
                         submit_url,
                         json=submission_data,
-                        headers={"Content-Type": "application/json"}
+                        headers=headers
                     )
 
                     if response.status_code >= 400:
@@ -607,7 +621,8 @@ class QueueManager:
             try:
                 headers = {}
                 if signature_auth:
-                    headers = signature_auth.create_auth_headers(phase_endpoint)
+                    nonce = f"{int(time.time())}_{secrets.token_hex(8)}"
+                    headers = signature_auth.create_auth_headers_with_nonce(phase_endpoint, nonce)
 
                 async with httpx.AsyncClient(timeout=30.0) as client:
                     response = await client.get(phase_url, headers=headers)

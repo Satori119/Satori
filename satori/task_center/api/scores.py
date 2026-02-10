@@ -1,12 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException, Security, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from satori.common.database import get_db
-from satori.common.auth.api_key import verify_api_key
 from satori.task_center.services.score_archive import ScoreArchive
-from satori.task_center.services.consensus_sync import ConsensusSync
 from satori.task_center.schemas.score import ScoreSubmit, ScoreQueryResponse
 from satori.task_center import shared
 from satori.common.utils.logging import setup_logger
+from satori.common.auth.signature_auth import verify_node_signature
 
 router = APIRouter()
 logger = setup_logger(__name__)
@@ -14,8 +13,12 @@ logger = setup_logger(__name__)
 @router.post("/submit")
 async def submit_score(
     score_data: ScoreSubmit,
+    hotkey: str = Depends(verify_node_signature),
     db: Session = Depends(get_db)
 ):
+    if hotkey != score_data.validator_hotkey:
+        raise HTTPException(status_code=403, detail="Hotkey mismatch")
+    
     from satori.task_center.services.task_lifecycle_manager import TaskLifecycleManager
     lifecycle_manager = TaskLifecycleManager(db)
     can_score, reason = lifecycle_manager.can_validator_score(score_data.task_id)
@@ -32,6 +35,7 @@ async def submit_score(
 @router.get("/query/{miner_hotkey}", response_model=ScoreQueryResponse)
 async def query_score(
     miner_hotkey: str,
+    hotkey: str = Depends(verify_node_signature),
     task_id: str = None,
     request: Request = None,
     db: Session = Depends(get_db)
@@ -52,34 +56,31 @@ async def query_score(
 @router.get("/all")
 async def get_all_scores(
     task_id: str,
-    request: Request,
+    hotkey: str = Depends(verify_node_signature),
+    request: Request = None,
     db: Session = Depends(get_db)
 ):
     archive = ScoreArchive(db, wallet=shared.wallet, wallet_name=shared.wallet_name, hotkey_name=shared.hotkey_name, yaml_config=shared.yaml_config)
-    consensus_sync = ConsensusSync(db)
 
     scores = archive.get_all_scores_for_task(task_id)
-    consensus_data = consensus_sync.sync_consensus_data(task_id)
 
     return {
         "task_id": task_id,
-        "scores": scores,
-        "consensus_data": consensus_data
+        "scores": scores
     }
 
 
 @router.get("/query")
 async def query_all_scores(
     task_id: str = None,
+    hotkey: str = Depends(verify_node_signature),
     request: Request = None,
     db: Session = Depends(get_db)
 ):
     archive = ScoreArchive(db, wallet=shared.wallet, wallet_name=shared.wallet_name, hotkey_name=shared.hotkey_name, yaml_config=shared.yaml_config)
-    consensus_sync = ConsensusSync(db)
 
     if task_id:
         scores = archive.get_all_scores_for_task(task_id)
-        consensus_data = consensus_sync.sync_consensus_data(task_id)
 
         return {
             "task_id": task_id,
@@ -90,8 +91,7 @@ async def query_all_scores(
                     "validator_count": item["validator_count"]
                 }
                 for item in scores
-            },
-            "consensus_data": consensus_data
+            }
         }
     else:
         from satori.common.models.score import Score

@@ -5,7 +5,6 @@ import statistics
 
 logger = setup_logger(__name__)
 
-
 class IdleRewardService:
 
     def __init__(self):
@@ -100,4 +99,3 @@ class IdleRewardService:
             "treasury": treasury_amount,
             "miner_rewards": rewards
         }
-

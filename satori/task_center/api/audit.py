@@ -1,9 +1,9 @@
-from fastapi import APIRouter, Depends, Security, Request, HTTPException
+from fastapi import APIRouter, Depends, Request, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional, Dict, Any
 from satori.common.database import get_db
-from satori.common.auth.api_key import verify_api_key
+from satori.common.auth.signature_auth import verify_node_signature
 from satori.task_center.services.audit_task_creator import AuditTaskCreator
 from satori.common.utils.logging import setup_logger
 
@@ -23,8 +23,11 @@ async def create_audit_task(
     miner_hotkey: str,
     lora_url: str,
     request: Request,
+    hotkey: str = Depends(verify_node_signature),
     db: Session = Depends(get_db)
 ):
+    if hotkey != miner_hotkey:
+        raise HTTPException(status_code=403, detail="Hotkey mismatch")
     creator = AuditTaskCreator(db)
     audit_task = creator.create_audit_task(task_id, miner_hotkey, lora_url)
 
@@ -37,6 +40,7 @@ async def create_audit_task(
 @router.post("/update_status")
 async def update_audit_task_status(
     update_data: AuditStatusUpdate,
+    hotkey: str = Depends(verify_node_signature),
     db: Session = Depends(get_db)
 ):
 
@@ -57,6 +61,7 @@ async def update_audit_task_status(
 @router.get("/status/{task_id}")
 async def get_audit_task_status(
     task_id: str,
+    hotkey: str = Depends(verify_node_signature),
     db: Session = Depends(get_db)
 ):
     creator = AuditTaskCreator(db)
@@ -67,8 +72,11 @@ async def get_audit_task_status(
 @router.get("/pending")
 async def get_pending_audit_tasks(
     validator_key: str,
+    hotkey: str = Depends(verify_node_signature),
     db: Session = Depends(get_db)
 ):
+    if hotkey != validator_key:
+        raise HTTPException(status_code=403, detail="Hotkey mismatch")
 
     creator = AuditTaskCreator(db)
     tasks = creator.get_pending_tasks_for_validator(validator_key)

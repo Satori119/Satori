@@ -5,7 +5,6 @@ from satori.common.utils.logging import setup_logger
 
 logger = setup_logger(__name__)
 
-
 class RewardService:
 
     def __init__(self):

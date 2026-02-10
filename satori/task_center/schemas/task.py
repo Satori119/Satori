@@ -42,6 +42,7 @@ class TaskCreate(BaseModel):
     review_duration: float
     reward_duration: float
     reward_config: Optional[RewardConfig] = None
+    default_reward_miners: Optional[int] = None
 
 
 class TaskResponse(BaseModel):

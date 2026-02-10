@@ -2,6 +2,9 @@ import asyncio
 from typing import Dict, Any, Optional, List
 from datetime import datetime, timezone
 import httpx
+import secrets
+import time
+from satori.common.crypto.signature import SignatureAuth
 from satori.common.utils.logging import setup_logger
 from satori.common.config import settings
 from satori.miner.services.dataset_service import DatasetService
@@ -136,12 +139,17 @@ class TaskMonitorService:
 
         miner_hotkey = self.wallet.hotkey.ss58_address
         tasks_url = f"{self.task_center_url}/v1/miners/tasks/available"
+        tasks_endpoint = "/v1/miners/tasks/available"
 
         try:
             async with httpx.AsyncClient(timeout=80.0) as client:
+                signature_auth = SignatureAuth(self.wallet)
+                nonce = f"{int(time.time())}_{secrets.token_hex(8)}"
+                auth_headers = signature_auth.create_auth_headers_with_nonce(tasks_endpoint, nonce)
                 response = await client.get(
                     tasks_url,
-                    params={"miner_hotkey": miner_hotkey}
+                    params={"miner_hotkey": miner_hotkey},
+                    headers=auth_headers
                 )
 
                 if response.status_code == 200:

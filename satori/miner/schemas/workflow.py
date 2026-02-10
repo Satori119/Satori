@@ -2,7 +2,6 @@ from pydantic import BaseModel, ConfigDict
 from typing import Optional, Dict, Any
 from datetime import datetime
 
-
 class WorkflowReceive(BaseModel):
     task_id: str
     miner_key: str

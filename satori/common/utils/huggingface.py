@@ -4,7 +4,6 @@ from satori.common.utils.logging import setup_logger
 
 logger = setup_logger(__name__)
 
-
 def parse_dataset_url(url: str) -> str:
 
     if not url:

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Security, Request, Header
+from fastapi import APIRouter, Depends, HTTPException, Security, Request
 from sqlalchemy.orm import Session
 from typing import List
 from datetime import datetime, timedelta, timezone
@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from satori.common.database import get_db
 from satori.common.models.task import Task, TaskStatus, PublishStatus
 from satori.common.auth.api_key import verify_api_key
+from satori.common.auth.signature_auth import verify_node_signature
 from satori.task_center.services.task_dispatcher import TaskDispatcher
 from satori.task_center.services.task_repository import TaskRepository
 from satori.task_center.services.task_validator import TaskValidator, TaskValidationError
@@ -102,6 +103,15 @@ async def publish_task(
         existing_task.review_start = review_start
         existing_task.reward_start = reward_start
         existing_task.workflow_end = workflow_end
+        
+        from satori.common.config import settings
+        default_reward_miners = getattr(task_data, 'default_reward_miners', None)
+        if default_reward_miners is not None:
+            if default_reward_miners < settings.MIN_REWARD_MINERS:
+                default_reward_miners = settings.MIN_REWARD_MINERS
+            elif default_reward_miners > settings.MAX_REWARD_MINERS:
+                default_reward_miners = settings.MAX_REWARD_MINERS
+            existing_task.default_reward_miners = default_reward_miners
 
         db.commit()
         db.refresh(existing_task)
@@ -116,6 +126,7 @@ async def publish_task(
 @router.get("/active/count")
 async def get_active_task_count(
     request: Request,
+    hotkey: str = Depends(verify_node_signature),
     db: Session = Depends(get_db)
 ):
     reward_tasks = db.query(Task).filter(
@@ -160,6 +171,7 @@ async def get_active_task_count(
 async def get_task_participants(
     task_id: str,
     request: Request,
+    hotkey: str = Depends(verify_node_signature),
     db: Session = Depends(get_db)
 ):
     from satori.common.models.miner_submission import MinerSubmission
@@ -180,6 +192,7 @@ async def get_task_participants(
 async def get_task(
     task_id: str,
     request: Request,
+    hotkey: str = Depends(verify_node_signature),
     db: Session = Depends(get_db)
 ):
     repository = TaskRepository(db)
@@ -193,6 +206,7 @@ async def list_tasks(
     status: TaskStatus = None,
     page: int = 1,
     page_size: int = 20,
+    hotkey: str = Depends(verify_node_signature),
     db: Session = Depends(get_db)
 ):
     repository = TaskRepository(db)
@@ -212,6 +226,7 @@ async def list_tasks(
 @router.get("/pending")
 async def get_pending_tasks(
     request: Request,
+    hotkey: str = Depends(verify_node_signature),
     db: Session = Depends(get_db)
 ):
 
@@ -260,33 +275,34 @@ async def get_pending_tasks(
     }
 
 
+@router.get("/{task_id}/config")
+async def get_task_config(
+    task_id: str,
+    request: Request,
+    hotkey: str = Depends(verify_node_signature),
+    db: Session = Depends(get_db)
+):
+    repository = TaskRepository(db)
+    task = repository.get_by_task_id(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    
+    from satori.common.config import settings
+    
+    return {
+        "task_id": task_id,
+        "min_reward_miners": settings.MIN_REWARD_MINERS,
+        "max_reward_miners": settings.MAX_REWARD_MINERS,
+        "default_reward_miners": getattr(task, 'default_reward_miners', 6)
+    }
+
 @router.get("/{task_id}/phase")
 async def get_task_phase(
     task_id: str,
     request: Request,
-    x_signature: str = Header(None, alias="X-Signature"),
-    x_timestamp: str = Header(None, alias="X-Timestamp"),
-    x_hotkey: str = Header(None, alias="X-Hotkey"),
-    x_message: str = Header(None, alias="X-Message"),
+    hotkey: str = Depends(verify_node_signature),
     db: Session = Depends(get_db)
 ):
-    if not all([x_signature, x_timestamp, x_hotkey, x_message]):
-        raise HTTPException(status_code=401, detail="Missing authentication headers")
-
-    from satori.common.crypto.signature import SignatureAuth
-    from satori.task_center import shared
-
-    signature_auth = SignatureAuth(shared.wallet)
-    is_valid = signature_auth.verify_signature(
-        signature=x_signature,
-        message=x_message,
-        timestamp=x_timestamp,
-        hotkey=x_hotkey
-    )
-
-    if not is_valid:
-        raise HTTPException(status_code=403, detail="Invalid signature")
-
     from satori.task_center.services.task_lifecycle_manager import TaskLifecycleManager
 
     lifecycle_manager = TaskLifecycleManager(db)

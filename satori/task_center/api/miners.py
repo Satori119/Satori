@@ -24,6 +24,7 @@ from satori.task_center.schemas.dataset import (
     DatasetListResponse
 )
 from satori.common.utils.logging import setup_logger
+from satori.common.auth.signature_auth import verify_node_signature
 
 router = APIRouter()
 logger = setup_logger(__name__)
@@ -32,12 +33,17 @@ logger = setup_logger(__name__)
 @router.post("/receive", response_model=MinerTaskResponse)
 async def receive_task(
     request: MinerTaskReceive,
+    hotkey: str = Depends(verify_node_signature),
     db: Session = Depends(get_db)
 ):
     logger.info("=" * 80)
     logger.info("receive_task endpoint CALLED!")
     logger.info(f"task_id={request.task_id}, miner_key={request.miner_key[:20]}...")
     logger.info("=" * 80)
+    
+    if hotkey != request.miner_key:
+        raise HTTPException(status_code=403, detail="Hotkey mismatch")
+    
     try:
         dispatcher = TaskDispatcher(db, miner_cache)
         task = dispatcher.assign_task_to_miner(request.task_id, request.miner_key)
@@ -58,8 +64,11 @@ async def receive_task(
 @router.post("/submit", response_model=MinerSubmitResponse)
 async def submit_result(
     request: MinerSubmitRequest,
+    hotkey: str = Depends(verify_node_signature),
     db: Session = Depends(get_db)
 ):
+    if hotkey != request.miner_key:
+        raise HTTPException(status_code=403, detail="Hotkey mismatch")
     dispatcher = TaskDispatcher(db, miner_cache)
     submission = dispatcher.receive_miner_submission(request)
 
@@ -74,8 +83,12 @@ async def submit_result(
 @router.post("/dataset/submit", response_model=DatasetSubmitResponse)
 async def submit_dataset(
     request: DatasetSubmitRequest,
+    hotkey: str = Depends(verify_node_signature),
     db: Session = Depends(get_db)
 ):
+    if hotkey != request.miner_hotkey:
+        raise HTTPException(status_code=403, detail="Hotkey mismatch")
+    
     try:
         task = db.query(Task).filter(Task.task_id == request.task_id).first()
         if not task:
@@ -156,8 +169,11 @@ async def submit_dataset(
 async def get_dataset_status(
     task_id: str = Query(...),
     miner_hotkey: str = Query(...),
+    hotkey: str = Depends(verify_node_signature),
     db: Session = Depends(get_db)
 ):
+    if hotkey != miner_hotkey:
+        raise HTTPException(status_code=403, detail="Hotkey mismatch")
     try:
         dataset = db.query(MinerDataset).filter(
             MinerDataset.task_id == task_id,
@@ -190,6 +206,7 @@ async def get_dataset_status(
 async def list_datasets(
     task_id: str = Query(...),
     status: str = Query(None),
+    hotkey: str = Depends(verify_node_signature),
     db: Session = Depends(get_db)
 ):
     try:
@@ -226,8 +243,11 @@ async def list_datasets(
 @router.get("/tasks/available", response_model=AvailableTasksResponse)
 async def get_available_tasks(
     miner_hotkey: str = Query(...),
+    hotkey: str = Depends(verify_node_signature),
     db: Session = Depends(get_db)
 ):
+    if hotkey != miner_hotkey:
+        raise HTTPException(status_code=403, detail="Hotkey mismatch")
     try:
         tasks = db.query(Task).filter(
             or_(

@@ -1,7 +1,6 @@
 from datetime import datetime, timezone
 from typing import Optional
 
-
 def get_current_time() -> datetime:
     return datetime.now(timezone.utc)
 

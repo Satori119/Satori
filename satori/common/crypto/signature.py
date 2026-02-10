@@ -86,6 +86,24 @@ class SignatureAuth:
             "X-Message": signature_data["message"]
         }
     
+    def create_auth_headers_with_nonce(
+        self,
+        endpoint: str,
+        nonce: str
+    ) -> Dict[str, str]:
+        timestamp = int(time.time())
+        message = f"{endpoint}:{timestamp}:{nonce}"
+        
+        signature_data = self.sign_message(message, timestamp)
+        
+        return {
+            "X-Signature": signature_data["signature"],
+            "X-Timestamp": signature_data["timestamp"],
+            "X-Hotkey": signature_data["hotkey"],
+            "X-Message": message,
+            "X-Nonce": nonce
+        }
+    
     def sign_response(self, response_data: Dict) -> Dict:
         timestamp = int(time.time())
         response_str = f"{response_data.get('status', '')}:{response_data.get('hotkey', '')}:{timestamp}"
@@ -125,7 +143,7 @@ class SignatureAuth:
             current_time = int(time.time())
             response_time = int(timestamp)
             
-            max_age = 1800
+            max_age = 300
             if abs(current_time - response_time) > max_age:
                 logger.warning(f"Response signature timestamp expired: {current_time - response_time}s (max: {max_age}s)")
                 return False

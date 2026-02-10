@@ -294,7 +294,6 @@ class ScoreCalculator:
         if not validator_scores:
             return {}
 
-        # Limit the number of validators to the maximum allowed
         max_validators = settings.CONSENSUS_MAX_VALIDATORS
         min_validators = settings.CONSENSUS_MIN_VALIDATORS
         
@@ -303,7 +302,6 @@ class ScoreCalculator:
                 f"Number of validators ({len(validator_scores)}) exceeds maximum ({max_validators}). "
                 f"Limiting to {max_validators} validators."
             )
-            # Take only the first max_validators validators
             validator_scores = dict(list(validator_scores.items())[:max_validators])
         
         if len(validator_scores) < min_validators:
@@ -321,9 +319,7 @@ class ScoreCalculator:
 
         consensus_scores = {}
         for miner_key, scores in miner_scores.items():
-            # With max 2 validators, we use all scores (no need to filter outliers)
             if len(scores) > max_validators:
-                # This shouldn't happen, but handle it just in case
                 sorted_scores = sorted(scores)
                 filtered_scores = sorted_scores[:max_validators]
             else:

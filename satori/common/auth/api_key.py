@@ -68,8 +68,10 @@ class APIKeyAuth:
             logger.debug(f"Database not available for API key loading: {e}")
         
         if not api_keys:
-            logger.warning("No API keys configured, using default key")
-            api_keys.add("default_api_key_change_in_production")
+            logger.error(
+                "No API keys configured. Set TASK_CENTER_API_KEY or configure api.key in config/db."
+            )
+            raise RuntimeError("API key configuration missing")
         
         return api_keys
     

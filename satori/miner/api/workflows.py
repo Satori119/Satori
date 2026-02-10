@@ -5,6 +5,9 @@ from satori.miner import shared
 import httpx
 from satori.common.config import settings
 import traceback
+import secrets
+import time
+from satori.common.crypto.signature import SignatureAuth
 
 router = APIRouter()
 logger = setup_logger(__name__)
@@ -46,10 +49,15 @@ async def receive_workflow(request: WorkflowReceive):
 
             async with httpx.AsyncClient(timeout=30.0) as client:
                 try:
+                    if not shared.wallet:
+                        raise HTTPException(status_code=500, detail="Wallet not initialized")
+                    signature_auth = SignatureAuth(shared.wallet)
+                    nonce = f"{int(time.time())}_{secrets.token_hex(8)}"
+                    auth_headers = signature_auth.create_auth_headers_with_nonce("/v1/miners/receive", nonce)
                     response = await client.post(
                         task_center_url,
                         json={"task_id": request.task_id, "miner_key": request.miner_key},
-                        headers={"Content-Type": "application/json"}
+                        headers={**auth_headers, "Content-Type": "application/json"}
                     )
 
                     if response.status_code >= 400:
@@ -154,10 +162,15 @@ async def submit_workflow(request: WorkflowSubmit):
         
         async with httpx.AsyncClient(timeout=30.0) as client:
             try:
+                if not shared.wallet:
+                    raise HTTPException(status_code=500, detail="Wallet not initialized")
+                signature_auth = SignatureAuth(shared.wallet)
+                nonce = f"{int(time.time())}_{secrets.token_hex(8)}"
+                auth_headers = signature_auth.create_auth_headers_with_nonce("/v1/miners/submit", nonce)
                 response = await client.post(
                     task_center_url,
                     json=request.dict() if hasattr(request, 'dict') else request,
-                    headers={"Content-Type": "application/json"}
+                    headers={**auth_headers, "Content-Type": "application/json"}
                 )
                 
                 logger.debug(f"Task center response status: {response.status_code}")

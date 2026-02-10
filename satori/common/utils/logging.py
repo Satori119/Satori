@@ -7,7 +7,6 @@ from typing import Optional
 _module_prefix: Optional[str] = None
 _global_log_level: Optional[str] = None
 
-
 def set_module_prefix(prefix: str):
 
     global _module_prefix

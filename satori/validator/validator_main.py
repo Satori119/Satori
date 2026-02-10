@@ -28,6 +28,7 @@ from satori.validator.api import router
 from satori.validator.services.bittensor_sync import BittensorSyncService
 from satori.validator.services.task_processor import TaskProcessor
 from satori.validator.services.weight_sync_service import WeightSyncService
+from satori.validator.services.score_cache import ScoreCache
 from satori.common.services.auto_update import AutoUpdateService
 import bittensor as bt
 from satori.common.config import settings
@@ -52,7 +53,10 @@ else:
 
 wallet = bt.wallet(name=wallet_name, hotkey=hotkey_name)
 bittensor_sync = BittensorSyncService(wallet, wallet_name, hotkey_name, yaml_config=yaml_config)
-task_processor = TaskProcessor(wallet, wallet_name, hotkey_name, yaml_config=yaml_config)
+
+score_cache = ScoreCache()
+
+task_processor = TaskProcessor(wallet, wallet_name, hotkey_name, score_cache=score_cache, yaml_config=yaml_config)
 
 db_session = SessionLocal()
 
@@ -62,6 +66,7 @@ weight_sync_service = WeightSyncService(
     wallet_name=wallet_name,
     hotkey_name=hotkey_name,
     bittensor_sync=bittensor_sync,
+    score_cache=score_cache,
     sync_interval=weight_sync_interval,
     yaml_config=yaml_config,
     db_session=db_session

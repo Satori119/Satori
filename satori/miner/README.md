@@ -255,7 +255,6 @@ pm2 stop satori-miner
 training:
   image:
     base_model: black-forest-labs/FLUX.1-dev
-   
 ```
 
 ## Network Configuration

@@ -13,7 +13,6 @@ from satori.common.utils.logging import setup_logger
 
 logger = setup_logger(__name__)
 
-
 class AutoUpdateService:
 
     def __init__(
@@ -37,7 +36,7 @@ class AutoUpdateService:
         self.enable_rollback = enable_rollback
         
         self.allowed_repo_patterns = allowed_repo_patterns or [
-            "satori/*",
+            "Satori119/*",
         ]
         
         self.script_whitelist = script_whitelist or [

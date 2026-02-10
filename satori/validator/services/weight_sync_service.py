@@ -7,9 +7,13 @@ from satori.common.utils.logging import setup_logger
 from satori.common.config import settings
 from satori.common.config.yaml_config import YamlConfig
 import bittensor as bt
+import secrets
+import time
+from satori.common.crypto.signature import SignatureAuth
 from satori.validator.services.bittensor_sync import BittensorSyncService
 from satori.validator.services.score_calculator import ScoreCalculator
 from satori.validator.services.ema_weight_service import EmaWeightService
+from satori.validator.services.score_cache import ScoreCache
 
 logger = setup_logger(__name__)
 
@@ -21,6 +25,7 @@ class WeightSyncService:
         wallet_name: str,
         hotkey_name: str,
         bittensor_sync: BittensorSyncService,
+        score_cache: ScoreCache,
         sync_interval: int = 3600,
         yaml_config: Optional[YamlConfig] = None,
         db_session: Optional[Session] = None
@@ -29,6 +34,7 @@ class WeightSyncService:
         self.wallet_name = wallet_name
         self.hotkey_name = hotkey_name
         self.bittensor_sync = bittensor_sync
+        self.score_cache = score_cache
         self.score_calculator = ScoreCalculator()
         self.sync_interval = sync_interval
         self.is_running = False
@@ -43,6 +49,18 @@ class WeightSyncService:
         else:
             self.task_center_url = settings.TASK_CENTER_URL
             self.api_key = getattr(settings, 'API_KEY', None)
+        
+        self.signature_auth = SignatureAuth(wallet)
+    
+    def _get_headers(self) -> Dict[str, str]:
+        headers: Dict[str, str] = {}
+        if self.api_key:
+            headers["X-API-Key"] = self.api_key
+        return headers
+    
+    def _get_sig_headers(self, endpoint: str) -> Dict[str, str]:
+        nonce = f"{int(time.time())}_{secrets.token_hex(8)}"
+        return self.signature_auth.create_auth_headers_with_nonce(endpoint, nonce)
 
     def _get_ema_service(self) -> Optional[EmaWeightService]:
         if self._ema_service is None and self.db_session is not None:
@@ -99,9 +117,12 @@ class WeightSyncService:
                 await asyncio.sleep(self.sync_interval)
 
     async def sync_weights(self):
+
         logger.info("Starting weight synchronization...")
 
         try:
+            await self.clear_ended_task_cache()
+            
             idle_status = await self._check_system_idle()
             is_idle = idle_status.get("is_idle", True)
             reward_task_ids = idle_status.get("reward_task_ids", [])
@@ -125,15 +146,14 @@ class WeightSyncService:
 
             logger.info(f"Found {len(miner_task_types)} participating miners")
 
-            participating_miners = set(miner_task_types.keys())
-            miner_scores = await self._fetch_miner_scores_for_tasks(reward_task_ids, participating_miners)
+            miner_scores = await self._get_miner_scores_from_cache(reward_task_ids)
 
             if not miner_scores:
-                logger.warning("No miner scores found for REWARD phase tasks, setting idle weight")
+                logger.warning("No miner scores found in ScoreCache for REWARD phase tasks, setting idle weight")
                 await self._set_idle_weight_to_chain()
                 return
 
-            logger.info(f"Fetched scores for {len(miner_scores)} participating miners")
+            logger.info(f"Fetched scores for {len(miner_scores)} miners from ScoreCache")
 
             if task_configs:
                 weights = self._calculate_pool_weights(
@@ -186,9 +206,7 @@ class WeightSyncService:
 
     async def _check_system_idle(self) -> Dict[str, Any]:
         try:
-            headers = {}
-            if self.api_key:
-                headers["X-API-Key"] = self.api_key
+            headers = {**self._get_headers(), **self._get_sig_headers("/v1/tasks/active/count")}
 
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.get(
@@ -218,10 +236,6 @@ class WeightSyncService:
         task_types: Dict[str, List[str]]
     ) -> Dict[str, str]:
         try:
-            headers = {}
-            if self.api_key:
-                headers["X-API-Key"] = self.api_key
-
             task_id_to_type = {}
             for task_type, ids in task_types.items():
                 for task_id in ids:
@@ -231,6 +245,7 @@ class WeightSyncService:
 
             async with httpx.AsyncClient(timeout=60.0) as client:
                 for task_id in task_ids:
+                    headers = {**self._get_headers(), **self._get_sig_headers(f"/v1/tasks/{task_id}/participants")}
                     response = await client.get(
                         f"{self.task_center_url}/v1/tasks/{task_id}/participants",
                         headers=headers
@@ -257,72 +272,62 @@ class WeightSyncService:
             logger.error(f"Error fetching participating miners with types: {e}", exc_info=True)
             return {}
 
-    async def _fetch_participating_miners(self, task_ids: List[str]) -> set:
+    async def _get_miner_scores_from_cache(self, task_ids: List[str]) -> Dict[str, float]:
+        miner_scores = {}
+        
+        for task_id in task_ids:
+            task_scores = self.score_cache.get_cached_scores_for_task(task_id)
+            
+            for score in task_scores:
+                miner_hotkey = score["miner_hotkey"]
+                if miner_hotkey in miner_scores:
+                    miner_scores[miner_hotkey] = max(miner_scores[miner_hotkey], score["score"])
+                else:
+                    miner_scores[miner_hotkey] = score["score"]
+        
+        return miner_scores
+    
+    async def clear_ended_task_cache(self):
+
+        cached_task_ids = list(self.score_cache.get_all_cached_scores().keys())
+        
+        if not cached_task_ids:
+            return
+        
+        for task_id in cached_task_ids:
+            try:
+                task_status = await self._get_task_status(task_id)
+                
+                from satori.common.models.task import TaskStatus
+                if task_status == TaskStatus.ENDED.value or task_status == "ended":
+                    self.score_cache.clear_scores(task_id)
+                    logger.info(f"Cleared cache for ended task {task_id}")
+            except Exception as e:
+                logger.warning(f"Failed to check status for task {task_id}: {e}")
+                continue
+    
+    async def _get_task_status(self, task_id: str) -> Optional[str]:
         try:
-            headers = {}
-            if self.api_key:
-                headers["X-API-Key"] = self.api_key
-
-            participating_miners = set()
-
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                for task_id in task_ids:
-                    response = await client.get(
-                        f"{self.task_center_url}/v1/tasks/{task_id}/participants",
-                        headers=headers
-                    )
-
-                    if response.status_code == 200:
-                        data = response.json()
-                        miners = data.get("miner_hotkeys", [])
-                        participating_miners.update(miners)
-                        logger.debug(f"Task {task_id}: found {len(miners)} participants")
-                    else:
-                        logger.warning(f"Failed to fetch participants for {task_id}: HTTP {response.status_code}")
-
-            return participating_miners
-
+            headers = {**self._get_headers(), **self._get_sig_headers(f"/v1/tasks/{task_id}")}
+            
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.get(
+                    f"{self.task_center_url}/v1/tasks/{task_id}",
+                    headers=headers
+                )
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    status = data.get("status")
+                    if hasattr(status, 'value'):
+                        return status.value
+                    return str(status) if status else None
+                else:
+                    logger.warning(f"Failed to get task status: {response.status_code}")
+                    return None
         except Exception as e:
-            logger.error(f"Error fetching participating miners: {e}", exc_info=True)
-            return set()
-
-    async def _fetch_miner_scores_for_tasks(self, task_ids: List[str], participating_miners: set) -> Dict[str, float]:
-        try:
-            headers = {}
-            if self.api_key:
-                headers["X-API-Key"] = self.api_key
-
-            miner_scores = {}
-
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                for task_id in task_ids:
-                    response = await client.get(
-                        f"{self.task_center_url}/v1/scores/query",
-                        params={"task_id": task_id},
-                        headers=headers
-                    )
-
-                    if response.status_code == 200:
-                        data = response.json()
-                        task_scores = data.get("miner_scores", {})
-
-                        for hotkey, score_info in task_scores.items():
-                            if hotkey in participating_miners:
-                                score = score_info.get("consensus_score", score_info.get("ema_score", 0.0))
-                                if hotkey in miner_scores:
-                                    miner_scores[hotkey] = max(miner_scores[hotkey], score)
-                                else:
-                                    miner_scores[hotkey] = score
-
-                        logger.debug(f"Task {task_id}: fetched scores for {len(task_scores)} miners")
-                    else:
-                        logger.warning(f"Failed to fetch scores for {task_id}: HTTP {response.status_code}")
-
-            return miner_scores
-
-        except Exception as e:
-            logger.error(f"Error fetching miner scores for tasks: {e}", exc_info=True)
-            return {}
+            logger.error(f"Error getting task status: {e}", exc_info=True)
+            return None
 
     async def _set_idle_weight_to_chain(self):
         try:
@@ -350,63 +355,6 @@ class WeightSyncService:
         except Exception as e:
             logger.error(f"Failed to set idle weight to chain: {e}", exc_info=True)
             raise
-
-    async def _fetch_all_miner_scores(self) -> Dict[str, float]:
-        task_center_url = self.task_center_url
-
-        try:
-            headers = {}
-            if self.api_key:
-                headers["X-API-Key"] = self.api_key
-
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                response = await client.get(
-                    f"{task_center_url}/v1/scores/query",
-                    headers=headers
-                )
-
-                if response.status_code == 200:
-                    data = response.json()
-
-                    if "all_miners" in data:
-                        return {
-                            hotkey: info.get("ema_score", 0.0)
-                            for hotkey, info in data["all_miners"].items()
-                        }
-                    elif "miner_scores" in data:
-                        return {
-                            hotkey: info.get("ema_score", info.get("average_score", 0.0))
-                            for hotkey, info in data["miner_scores"].items()
-                        }
-                    else:
-                        logger.warning(f"Unexpected response format: {list(data.keys())}")
-                        return {}
-
-                elif response.status_code == 404:
-                    logger.warning("No scores found in task center")
-                    return {}
-                else:
-                    logger.error(f"Failed to fetch scores: HTTP {response.status_code}")
-                    return {}
-
-        except httpx.HTTPError as e:
-            logger.error(f"HTTP error fetching scores: {e}", exc_info=True)
-            return {}
-        except Exception as e:
-            logger.error(f"Error fetching scores: {e}", exc_info=True)
-            return {}
-
-    def _calculate_weights(self, miner_scores: Dict[str, float]) -> Dict[str, float]:
-        valid_scores = {
-            hotkey: score
-            for hotkey, score in miner_scores.items()
-            if score >= self.score_calculator.base_threshold
-        }
-
-        if not valid_scores:
-            return {}
-
-        return self.score_calculator.calculate_weight_from_scores(valid_scores)
 
     def _calculate_pool_weights(
         self,

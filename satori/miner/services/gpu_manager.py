@@ -41,4 +41,3 @@ class GPUManager:
             return 0.0
         used_gpus = sum(1 for gpu in self.gpus if not gpu["available"])
         return used_gpus / total_gpus
-

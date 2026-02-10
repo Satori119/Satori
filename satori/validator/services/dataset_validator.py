@@ -472,7 +472,6 @@ class DatasetValidator:
         sample_results = []
 
         try:
-            # Try to get columns from workflow_spec first
             configured_image_col, configured_caption_col = self._get_configured_image_columns(task_info)
 
             image_column = configured_image_col or self._find_image_column(samples[0] if samples else {})

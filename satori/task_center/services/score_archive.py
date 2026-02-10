@@ -30,35 +30,8 @@ class ScoreArchive:
         self.db.add(score)
         self.db.commit()
         
-        logger.info(f"Score submitted: miner={score_data.miner_hotkey}, score={score_data.final_score}")
+        logger.info(f"Score submitted (for record only): miner={score_data.miner_hotkey}, score={score_data.final_score}")
         
-        from satori.task_center.services.continuous_reward_distributor import ContinuousRewardDistributor
-        
-        from satori.common.models.audit_task import AuditTask
-        audit_tasks = self.db.query(AuditTask).filter(
-            AuditTask.original_task_id == score_data.task_id,
-            AuditTask.miner_hotkey == score_data.miner_hotkey,
-            AuditTask.validator_hotkey.isnot(None)
-        ).all()
-
-        completed_audits = [t for t in audit_tasks if t.is_completed]
-        
-        if len(completed_audits) >= 3:
-            latest_audit = max(completed_audits, key=lambda x: x.completed_at or x.created_at)
-            
-            reward_distributor = ContinuousRewardDistributor(self.db, wallet=self.wallet, wallet_name=self.wallet_name, hotkey_name=self.hotkey_name, yaml_config=self.yaml_config)
-            try:
-                rewards = reward_distributor.distribute_rewards_for_completed_audit(
-                    latest_audit.audit_task_id,
-                    score_data.task_id
-                )
-                logger.info(
-                    f"Rewards distributed after consensus reached for task {score_data.task_id}: "
-                    f"{len([r for r in rewards.values() if r > 0])} miners received rewards"
-                )
-            except Exception as e:
-                logger.error(f"Failed to distribute rewards: {e}", exc_info=True)
-    
     def get_miner_scores(
         self,
         miner_hotkey: str,

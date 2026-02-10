@@ -8,6 +8,7 @@ from satori.task_center.services.audit_task_creator import AuditTaskCreator
 from satori.task_center.schemas.audit import AuditTaskResponse, AuditTaskListResponse
 from satori.task_center.schemas.dataset import DatasetValidationRequest, DatasetValidationResponse
 from satori.common.utils.logging import setup_logger
+from satori.common.auth.signature_auth import verify_node_signature
 
 router = APIRouter()
 logger = setup_logger(__name__)
@@ -15,8 +16,12 @@ logger = setup_logger(__name__)
 @router.get("/pending", response_model=AuditTaskListResponse)
 async def get_pending_audit_tasks(
     validator_key: str,
+    hotkey: str = Depends(verify_node_signature),
     db: Session = Depends(get_db)
 ):
+    if hotkey != validator_key:
+        raise HTTPException(status_code=403, detail="Hotkey mismatch")
+    
     creator = AuditTaskCreator(db)
     tasks = creator.get_pending_tasks_for_validator(validator_key)
     
@@ -29,8 +34,12 @@ async def get_pending_audit_tasks(
 async def receive_audit_task(
     audit_task_id: str,
     validator_key: str,
+    hotkey: str = Depends(verify_node_signature),
     db: Session = Depends(get_db)
 ):
+    if hotkey != validator_key:
+        raise HTTPException(status_code=403, detail="Hotkey mismatch")
+    
     creator = AuditTaskCreator(db)
     task = creator.assign_audit_task_to_validator(audit_task_id, validator_key)
 
@@ -43,8 +52,12 @@ async def receive_audit_task(
 @router.post("/dataset/validation", response_model=DatasetValidationResponse)
 async def submit_dataset_validation(
     request: DatasetValidationRequest,
+    hotkey: str = Depends(verify_node_signature),
     db: Session = Depends(get_db)
 ):
+    if hotkey != request.validator_hotkey:
+        raise HTTPException(status_code=403, detail="Hotkey mismatch")
+    
     try:
         audit_task = db.query(AuditTask).filter(
             AuditTask.audit_task_id == request.audit_task_id
@@ -93,4 +106,3 @@ async def submit_dataset_validation(
         logger.error(f"Error submitting dataset validation: {e}", exc_info=True)
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
-

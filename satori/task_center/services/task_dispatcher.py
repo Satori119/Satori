@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta, timezone
 from satori.common.models.task import Task, TaskStatus
+from satori.common.config import settings
 from satori.common.models.miner import Miner
 from satori.task_center.schemas.task import TaskCreate
 from satori.task_center.schemas.miner import MinerSubmitRequest
@@ -8,6 +9,7 @@ from satori.task_center.services.task_repository import TaskRepository
 from satori.task_center.services.audit_task_creator import AuditTaskCreator
 from satori.task_center.services.miner_selector import MinerSelector
 from satori.task_center.services.miner_cache import MinerCache
+
 from satori.common.utils.logging import setup_logger
 from satori.task_center import shared
 import uuid
@@ -55,6 +57,15 @@ class TaskDispatcher:
             min_score_threshold = getattr(reward_config, 'min_score_threshold', 3.5) or 3.5
             quality_exponent = getattr(reward_config, 'quality_exponent', 2) or 2
 
+        default_reward_miners = getattr(task_data, 'default_reward_miners', None)
+        if default_reward_miners is None:
+            default_reward_miners = 6
+        else:
+            if default_reward_miners < settings.MIN_REWARD_MINERS:
+                default_reward_miners = settings.MIN_REWARD_MINERS
+            elif default_reward_miners > settings.MAX_REWARD_MINERS:
+                default_reward_miners = settings.MAX_REWARD_MINERS
+
         task = Task(
             task_id=task_data.task_id,
             workflow_id=task_data.task_id,
@@ -77,7 +88,8 @@ class TaskDispatcher:
             reward_pool_ratio=reward_pool_ratio,
             reward_pool_name=reward_pool_name,
             min_score_threshold=min_score_threshold,
-            quality_exponent=quality_exponent
+            quality_exponent=quality_exponent,
+            default_reward_miners=default_reward_miners
         )
 
         self.db.add(task)
@@ -133,7 +145,7 @@ class TaskDispatcher:
         
         stake = self.bittensor_client.get_miner_stake(miner_key)
         
-        if stake < 1000.0:
+        if stake < settings.MINER_MIN_STAKE:
             logger.warning(f"Miner {miner_key} stake too low: {stake}")
             return None
         

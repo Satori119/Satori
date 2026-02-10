@@ -4,6 +4,9 @@ from datetime import datetime, timezone
 import httpx
 from satori.common.utils.logging import setup_logger
 from satori.common.config import settings
+import secrets
+import time
+from satori.common.crypto.signature import SignatureAuth
 
 logger = setup_logger(__name__)
 
@@ -42,6 +45,7 @@ class DatasetService:
         }
 
         submit_url = f"{self.task_center_url}/v1/miners/dataset/submit"
+        submit_endpoint = "/v1/miners/dataset/submit"
 
         last_error = None
         for attempt in range(1, DATASET_SUBMIT_MAX_RETRIES + 1):
@@ -49,10 +53,13 @@ class DatasetService:
                 logger.info(f"Submitting dataset for task {task_id} (attempt {attempt}/{DATASET_SUBMIT_MAX_RETRIES})")
 
                 async with httpx.AsyncClient(timeout=60.0) as client:
+                    signature_auth = SignatureAuth(self.wallet)
+                    nonce = f"{int(time.time())}_{secrets.token_hex(8)}"
+                    auth_headers = signature_auth.create_auth_headers_with_nonce(submit_endpoint, nonce)
                     response = await client.post(
                         submit_url,
                         json=submission_data,
-                        headers={"Content-Type": "application/json"}
+                        headers={**auth_headers, "Content-Type": "application/json"}
                     )
 
                     if response.status_code >= 400:
@@ -97,12 +104,17 @@ class DatasetService:
         miner_hotkey = self.wallet.hotkey.ss58_address
 
         status_url = f"{self.task_center_url}/v1/miners/dataset/status"
+        status_endpoint = "/v1/miners/dataset/status"
 
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
+                signature_auth = SignatureAuth(self.wallet)
+                nonce = f"{int(time.time())}_{secrets.token_hex(8)}"
+                auth_headers = signature_auth.create_auth_headers_with_nonce(status_endpoint, nonce)
                 response = await client.get(
                     status_url,
-                    params={"task_id": task_id, "miner_hotkey": miner_hotkey}
+                    params={"task_id": task_id, "miner_hotkey": miner_hotkey},
+                    headers=auth_headers
                 )
 
                 if response.status_code == 404:

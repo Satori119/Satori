@@ -35,6 +35,9 @@ class Settings(BaseSettings):
     CONSENSUS_MIN_VALIDATORS: int = 1
     CONSENSUS_MAX_VALIDATORS: int = 2
 
+    MIN_REWARD_MINERS: int = 3
+    MAX_REWARD_MINERS: int = 18
+
     CONFIG_FILE: Optional[str] = None
     
     class Config:
